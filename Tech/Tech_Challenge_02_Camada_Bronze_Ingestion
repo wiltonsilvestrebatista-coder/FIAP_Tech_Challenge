@@ -1,0 +1,188 @@
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Subindo a primeira carga de dados como teste
+-----------------------------------------------------------------
+
+import base64
+
+# Caminho do arquivo JSON que você subiu no Passo 7
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline.json", "rb") as f:
+    creds_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+df_uf = (
+    spark.read.format("bigquery")
+    .option("credentials", creds_b64)
+    .option("table", "basedosdados.br_inep_avaliacao_alfabetizacao.uf")
+    .option("project", "basedosdados")
+    .option("parentProject", "crianca-alfabetizada-pipeline")  # o projeto que você criou no Passo 2a
+    .load()
+)
+
+display(df_uf)
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Verificando a quantidade de linhas e colunas para ver se os dados subiram corretamente e o tamanho do dataset
+-----------------------------------------------------------------
+
+df_uf.printSchema()
+
+df_uf.count()
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Criando um schema dentro do DataBriks para depois gravas as tabelas
+-----------------------------------------------------------------
+
+spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_bronze")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_bronze.default")
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Gravando a tabela 
+-----------------------------------------------------------------
+(
+    df_uf.write
+    .format("delta")
+    .mode("overwrite")
+    .saveAsTable("bd_alfabetizacao_bronze.uf_alfabetizacao")
+)
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Confirmando a que a tabela esta gravada dentro do DataBricks
+-----------------------------------------------------------------
+
+display(spark.sql("SELECT * FROM bd_alfabetizacao_bronze.default.uf_alfabetizacao LIMIT 5"))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Ingestao em Lote das outras tabelas, menos a tabela de alunos, que inicialmente parece maior que as outras. 
+-----------------------------------------------------------------
+
+import base64
+
+with open("/Workspace/Users/SEU_EMAIL/nome-do-arquivo.json", "rb") as f:
+    creds_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+BILLING_PROJECT = "SEU_PROJECT_ID_DE_BILLING"
+
+# entidade_bronze : tabela_origem_no_bigquery
+fontes = {
+    "uf":                            "br_bd_diretorios_brasil.uf",
+    "municipio":                     "br_bd_diretorios_brasil.municipio",
+    "indicador_alfabetizacao_municipio": "br_inep_avaliacao_alfabetizacao.municipio",
+    "meta_alfabetizacao_brasil":     "br_inep_avaliacao_alfabetizacao.meta_alfabetizacao_brasil",
+    "meta_alfabetizacao_uf":         "br_inep_avaliacao_alfabetizacao.meta_alfabetizacao_uf",
+    "meta_alfabetizacao_municipio":  "br_inep_avaliacao_alfabetizacao.meta_alfabetizacao_municipio",
+    "dicionario":                    "br_inep_avaliacao_alfabetizacao.dicionario",
+}
+
+for nome_bronze, tabela_origem in fontes.items():
+    df = (
+        spark.read.format("bigquery")
+        .option("credentials", creds_b64)
+        .option("table", f"basedosdados.{tabela_origem}")
+        .option("project", "basedosdados")
+        .option("parentProject", BILLING_PROJECT)
+        .load()
+    )
+    (
+        df.write
+        .format("delta")
+        .mode("overwrite")
+        .saveAsTable(f"bd_alfabetizacao_bronze.default.{nome_bronze}")
+    )
+    print(f"OK: {nome_bronze} -> {df.count()} linhas")
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Checando o volume antes de carregar. 
+-----------------------------------------------------------------
+
+%pip install google-cloud-bigquery
+
+
+import json
+from google.cloud import bigquery
+from google.oauth2 import service_account
+
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline-3a0958adc1f3.json", "r") as f:
+    creds_dict = json.load(f)
+
+credentials = service_account.Credentials.from_service_account_info(creds_dict)
+
+client = bigquery.Client(credentials=credentials, project="crianca-alfabetizada-pipeline")
+
+query = """
+    SELECT COUNT(*) as total_linhas
+    FROM `basedosdados.br_inep_avaliacao_alfabetizacao.alunos`
+"""
+
+result = client.query(query).result()
+for row in result:
+    print(row.total_linhas)
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Volume de mais de 3M de alunos. 
+-- Testando com uma amostra reduzida 
+-----------------------------------------------------------------
+import base64
+
+with open("/Workspace/Users/SEU_EMAIL/nome-do-arquivo.json", "rb") as f:
+    creds_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+BILLING_PROJECT = "SEU_PROJECT_ID_DE_BILLING"
+
+-----------------------------
+
+df_alunos_sample = (
+    spark.read.format("bigquery")
+    .option("credentials", creds_b64)
+    .option("table", "basedosdados.br_inep_avaliacao_alfabetizacao.alunos")
+    .option("project", "basedosdados")
+    .option("parentProject", BILLING_PROJECT)
+    .load()
+    .limit(1000)
+)
+
+df_alunos_sample.printSchema()
+display(df_alunos_sample)
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Carregando o dataset de aluno completa
+-----------------------------------------------------------------
+
+df_alunos = (
+    spark.read.format("bigquery")
+    .option("credentials", creds_b64)
+    .option("table", "basedosdados.br_inep_avaliacao_alfabetizacao.alunos")
+    .option("project", "basedosdados")
+    .option("parentProject", BILLING_PROJECT)
+    .load()
+)
+
+(
+    df_alunos.write
+    .format("delta")
+    .mode("overwrite")
+    .saveAsTable("bd_alfabetizacao_bronze.default.alunos")
+)
+
+print(f"OK: alunos -> {df_alunos.count()} linhas")
+
+
+-----------------------------------------------------------------
+--- Confirmando que esta tudo gravado
+-----------------------------------------------------------------
+
+
+display(spark.sql("SHOW TABLES IN bd_alfabetizacao_bronze.default"))
+
+
+-----------------------------------------------------------------
+--- Fim da Camada Bronze - com injestao feita com os dados brutos. 
+-----------------------------------------------------------------
