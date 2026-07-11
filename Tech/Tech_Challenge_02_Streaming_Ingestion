@@ -1,0 +1,172 @@
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Criando o Volume (landing zone da simulacao)
+-----------------------------------------------------------------
+
+spark.sql("CREATE VOLUME IF NOT EXISTS bd_alfabetizacao_bronze.default.streaming_landing")
+
+
+--- validando 
+
+display(spark.sql("DESCRIBE VOLUME bd_alfabetizacao_bronze.default.streaming_landing"))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Criando a funcao que simula os eventos (gerando um novo indicador a cada execução)
+-----------------------------------------------------------------
+
+import random
+import json
+from datetime import datetime
+
+def simular_evento_indicador():
+    """
+    Gera um simulado de nova medição do indicador
+    por município, como se fosse um evento chegando em tempo quase real mesmo, tipo streaming.
+    """
+    municipios_amostra = (
+        spark.table("bd_alfabetizacao_silver.default.municipio")
+        .select("id_municipio")
+        .limit(100)
+        .collect()
+    )
+    municipio_escolhido = random.choice(municipios_amostra)["id_municipio"]
+
+    evento = {
+        "ano": 2025,
+        "id_municipio": municipio_escolhido,
+        "serie_codigo": "2",
+        "rede_codigo": str(random.choice([2, 3, 5])),
+        "taxa_alfabetizacao": round(random.uniform(30, 95), 2),
+        "media_portugues": round(random.uniform(700, 800), 2),
+        "evento_timestamp": datetime.utcnow().isoformat(),
+    }
+
+    caminho = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"
+    nome_arquivo = f"evento_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}.json"
+
+    dbutils.fs.put(f"{caminho}/{nome_arquivo}", json.dumps(evento), overwrite=True)
+    print(f"Evento simulado gravado: {nome_arquivo} -> município {municipio_escolhido}")
+
+simular_evento_indicador()
+
+ 
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- corrigindo o timezone.utc para nao depreciar
+-----------------------------------------------------------------
+
+from datetime import datetime, timezone
+
+def simular_evento_indicador():
+    municipios_amostra = (
+        spark.table("bd_alfabetizacao_silver.default.municipio")
+        .select("id_municipio")
+        .limit(100)
+        .collect()
+    )
+    municipio_escolhido = random.choice(municipios_amostra)["id_municipio"]
+
+    agora = datetime.now(timezone.utc)
+
+    evento = {
+        "ano": 2025,
+        "id_municipio": municipio_escolhido,
+        "serie_codigo": "2",
+        "rede_codigo": str(random.choice([2, 3, 5])),
+        "taxa_alfabetizacao": round(random.uniform(30, 95), 2),
+        "media_portugues": round(random.uniform(700, 800), 2),
+        "evento_timestamp": agora.isoformat(),
+    }
+
+    caminho = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"
+    nome_arquivo = f"evento_{agora.strftime('%Y%m%d%H%M%S%f')}.json"
+
+    dbutils.fs.put(f"{caminho}/{nome_arquivo}", json.dumps(evento), overwrite=True)
+    print(f"Evento simulado gravado: {nome_arquivo} -> município {municipio_escolhido}")
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Simulando os eventos (para imitar um streaming - 4X)
+-----------------------------------------------------------------
+
+simular_evento_indicador()
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- validando quantas entries existem 
+-----------------------------------------------------------------
+
+display(dbutils.fs.ls("/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Configurando o Auto Loader (Streaming Estruturado)
+--- vai ler os arquivos JSON (só os novos, sem reprocessar os que já esta la) e gravar na Bronze como uma tabela streaming, em modo append
+-----------------------------------------------------------------
+
+caminho_landing = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"
+caminho_checkpoint = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_checkpoint"
+caminho_schema = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_schema"
+
+df_stream = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaLocation", caminho_schema)
+    .load(caminho_landing)
+)
+
+query = (
+    df_stream.writeStream
+    .format("delta")
+    .option("checkpointLocation", caminho_checkpoint)
+    .outputMode("append")
+    .trigger(availableNow=True)
+    .toTable("bd_alfabetizacao_bronze.default.indicador_municipio_streaming")
+)
+
+query.awaitTermination()
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Validando se a tabela foi criada
+-----------------------------------------------------------------
+
+display(spark.sql("SELECT * FROM bd_alfabetizacao_bronze.default.indicador_municipio_streaming"))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Testando se a injestao streaming eh de fato incremental 
+-----------------------------------------------------------------
+
+--- criando mais entries
+simular_evento_indicador()
+simular_evento_indicador()
+
+--- streaming novamente
+
+df_stream = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaLocation", caminho_schema)
+    .load(caminho_landing)
+)
+
+query = (
+    df_stream.writeStream
+    .format("delta")
+    .option("checkpointLocation", caminho_checkpoint)
+    .outputMode("append")
+    .trigger(availableNow=True)
+    .toTable("bd_alfabetizacao_bronze.default.indicador_municipio_streaming")
+)
+
+query.awaitTermination()
+
+--- confirmando 
+
+display(spark.sql("SELECT COUNT(*) as total FROM bd_alfabetizacao_bronze.default.indicador_municipio_streaming"))
+
+
