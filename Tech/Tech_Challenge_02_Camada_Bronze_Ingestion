@@ -62,10 +62,10 @@ display(spark.sql("SELECT * FROM bd_alfabetizacao_bronze.default.uf_alfabetizaca
 
 import base64
 
-with open("/Workspace/Users/SEU_EMAIL/nome-do-arquivo.json", "rb") as f:
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline.json", "rb") as f:
     creds_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-BILLING_PROJECT = "SEU_PROJECT_ID_DE_BILLING"
+BILLING_PROJECT = "crianca-alfabetizada-pipeline"
 
 # entidade_bronze : tabela_origem_no_bigquery
 fontes = {
@@ -131,10 +131,10 @@ for row in result:
 -----------------------------------------------------------------
 import base64
 
-with open("/Workspace/Users/SEU_EMAIL/nome-do-arquivo.json", "rb") as f:
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline.json", "rb") as f:
     creds_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-BILLING_PROJECT = "SEU_PROJECT_ID_DE_BILLING"
+BILLING_PROJECT = "crianca-alfabetizada-pipeline"
 
 -----------------------------
 
