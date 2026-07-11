@@ -315,6 +315,48 @@ for nome, df in tabelas_silver.items():
     )
     print(f"OK: {nome} -> {df.count()} linhas gravadas")
 
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Ler o streaming Bronze e aplicar o mesmo pipeline de transformacao
+------------------------------------------------------------------- 
+df_stream_bronze = spark.readStream.format("delta").table(
+    "bd_alfabetizacao_bronze.default.indicador_municipio_streaming"
+)
+
+df_stream_silver = decode_column(df_stream_bronze, id_tabela="municipio", coluna="rede")
+df_stream_silver = decode_column(df_stream_silver, id_tabela="municipio", coluna="serie")
+
+df_stream_silver = (
+    df_stream_silver
+    .join(municipio_lookup, df_stream_silver["id_municipio"] == municipio_lookup["_id_municipio_lookup"], "left")
+    .drop("_id_municipio_lookup")
+)
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Gravando como streaming table na Silver
+------------------------------------------------------------------- 
+
+checkpoint_silver = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_checkpoint_silver"
+
+query_silver = (
+    df_stream_silver.writeStream
+    .format("delta")
+    .option("checkpointLocation", checkpoint_silver)
+    .outputMode("append")
+    .trigger(availableNow=True)
+    .toTable("bd_alfabetizacao_silver.default.indicador_municipio_streaming")
+)
+
+query_silver.awaitTermination()
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Validando Streaming na Silver
+------------------------------------------------------------------- 
+
+display(spark.sql("SELECT * FROM bd_alfabetizacao_silver.default.indicador_municipio_streaming"))
 
 ---- A SEQUENCIA DO SCRPIT PRECISA DE ALGUMAS ALTERACOES - OS CODIGOS EM SI ESTAO CORRETOR, APENAS A ORDEM DE EXECUCAO TALVEZ TENHA ERROS 
 
