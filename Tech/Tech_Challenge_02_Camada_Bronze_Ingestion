@@ -6,7 +6,7 @@
 import base64
 
 # Caminho do arquivo JSON que você subiu no Passo 7
-with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline.json", "rb") as f:
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/pipeline_tech_challenge_02/crianca-alfabetizada-pipeline-3a0958adc1f3.json", "rb") as f:
     creds_b64 = base64.b64encode(f.read()).decode("utf-8")
 
 df_uf = (
@@ -45,7 +45,7 @@ spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_bronze.default")
     df_uf.write
     .format("delta")
     .mode("overwrite")
-    .saveAsTable("bd_alfabetizacao_bronze.uf_alfabetizacao")
+    .saveAsTable("bd_alfabetizacao_bronze.default.uf_alfabetizacao")
 )
 
 -----------------------------------------------------------------
@@ -62,7 +62,7 @@ display(spark.sql("SELECT * FROM bd_alfabetizacao_bronze.default.uf_alfabetizaca
 
 import base64
 
-with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline.json", "rb") as f:
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/pipeline_tech_challenge_02/crianca-alfabetizada-pipeline-3a0958adc1f3.json", "rb") as f:
     creds_b64 = base64.b64encode(f.read()).decode("utf-8")
 
 BILLING_PROJECT = "crianca-alfabetizada-pipeline"
@@ -107,7 +107,7 @@ import json
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
-with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline-3a0958adc1f3.json", "r") as f:
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/pipeline_tech_challenge_02/crianca-alfabetizada-pipeline-3a0958adc1f3.json", "r") as f:
     creds_dict = json.load(f)
 
 credentials = service_account.Credentials.from_service_account_info(creds_dict)
@@ -131,7 +131,7 @@ for row in result:
 -----------------------------------------------------------------
 import base64
 
-with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/crianca-alfabetizada-pipeline.json", "rb") as f:
+with open("/Workspace/Users/wiltonsilvestrebatista@gmail.com/pipeline_tech_challenge_02/crianca-alfabetizada-pipeline-3a0958adc1f3.json", "rb") as f:
     creds_b64 = base64.b64encode(f.read()).decode("utf-8")
 
 BILLING_PROJECT = "crianca-alfabetizada-pipeline"
