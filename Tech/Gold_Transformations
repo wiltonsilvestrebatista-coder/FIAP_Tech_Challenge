@@ -1,0 +1,324 @@
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Lendo as duas fontes da Silver (Batch + Streaming) e comparar schemas antes de unir
+-----------------------------------------------------------------
+
+indicador_batch = spark.table("bd_alfabetizacao_silver.default.indicador_alfabetizacao_municipio")
+indicador_streaming = spark.table("bd_alfabetizacao_silver.default.indicador_municipio_streaming")
+
+print("--- Schema BATCH ---")
+indicador_batch.printSchema()
+
+print("--- Schema STREAMING ---")
+indicador_streaming.printSchema()
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Padronizando os dois schemas
+-----------------------------------------------------------------
+
+from pyspark.sql import functions as F
+
+# Do Batch: adiciona colunas para rastrear que só existem no streaming
+indicador_batch_padronizado = (
+    indicador_batch
+    .withColumn("evento_timestamp", F.lit(None).cast("string"))
+    .withColumn("origem", F.lit("batch"))
+)
+
+# Do Streaming: corrige tipos e adiciona colunas de proporção (que nao existiam na simulação)
+indicador_streaming_padronizado = (
+    indicador_streaming
+    .withColumn("ano", F.col("ano").cast("long"))
+    .withColumn("taxa_alfabetizacao", F.col("taxa_alfabetizacao").cast("double"))
+    .withColumn("media_portugues", F.col("media_portugues").cast("double"))
+    .withColumn("proporcao_aluno_nivel_0", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_1", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_2", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_3", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_4", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_5", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_6", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_7", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_8", F.lit(None).cast("double"))
+    .withColumn("origem", F.lit("streaming"))
+    .drop("_rescued_data")
+)
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Gravando como tabela unificada na Gold (primeiro transformar o streaming em batch e depois unificar)
+-----------------------------------------------------------------
+
+-------- criando o catalogo gold 
+
+spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_gold")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_gold.default")
+
+
+-------- validando o catalogo gold 
+
+display(spark.sql("SHOW SCHEMAS IN bd_alfabetizacao_gold"))
+
+
+---- unindo e gravando 
+
+# Le a tabela Silver do streaming em modo BATCH para poder usar o UNION
+indicador_streaming_batch = spark.table("bd_alfabetizacao_silver.default.indicador_municipio_streaming")
+
+indicador_streaming_padronizado = (
+    indicador_streaming_batch
+    .withColumn("ano", F.col("ano").cast("long"))
+    .withColumn("taxa_alfabetizacao", F.col("taxa_alfabetizacao").cast("double"))
+    .withColumn("media_portugues", F.col("media_portugues").cast("double"))
+    .withColumn("proporcao_aluno_nivel_0", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_1", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_2", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_3", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_4", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_5", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_6", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_7", F.lit(None).cast("double"))
+    .withColumn("proporcao_aluno_nivel_8", F.lit(None).cast("double"))
+    .withColumn("origem", F.lit("streaming"))
+    .drop("_rescued_data")
+)
+
+indicador_municipio_gold = indicador_batch_padronizado.unionByName(indicador_streaming_padronizado)
+
+(
+    indicador_municipio_gold.write
+    .format("delta")
+    .mode("overwrite")
+    .saveAsTable("bd_alfabetizacao_gold.default.indicador_alfabetizacao_municipio")
+)
+
+print(f"OK: {indicador_municipio_gold.count()} linhas na Gold (batch + streaming)")
+
+
+print("Colunas batch:", sorted(indicador_batch_padronizado.columns))
+print("Colunas streaming:", sorted(indicador_streaming_padronizado.columns))
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Tabela Metas e Resultados - Primeiro alinhando e dando match no formato longo 
+-----------------------------------------------------------------
+
+meta_municipio_silver = spark.table("bd_alfabetizacao_silver.default.meta_alfabetizacao_municipio")
+
+meta_municipio_longo = meta_municipio_silver.selectExpr(
+    "id_municipio",
+    "id_municipio_nome",
+    "rede",
+    "stack(7, "
+    "2024, meta_alfabetizacao_2024, "
+    "2025, meta_alfabetizacao_2025, "
+    "2026, meta_alfabetizacao_2026, "
+    "2027, meta_alfabetizacao_2027, "
+    "2028, meta_alfabetizacao_2028, "
+    "2029, meta_alfabetizacao_2029, "
+    "2030, meta_alfabetizacao_2030"
+    ") as (ano_meta, meta_taxa_alfabetizacao)"
+).dropDuplicates(["id_municipio", "rede", "ano_meta"])  # remove redundância entre linhas de anos diferentes
+
+display(meta_municipio_longo.limit(10))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Criando a funcao para validar nulos
+-----------------------------------------------------------------
+
+from pyspark.sql import functions as F
+
+def validar_nulos(df, colunas, nome_tabela=""):
+    total = df.count()
+    resultado = df.select([
+        F.sum(F.col(c).isNull().cast("int")).alias(c) for c in colunas
+    ]).collect()[0].asDict()
+
+    print(f"--- Validação de nulos: {nome_tabela} (total de linhas: {total}) ---")
+    problemas = False
+    for coluna, qtd_nulos in resultado.items():
+        pct = (qtd_nulos / total * 100) if total > 0 else 0
+        status = "⚠️ ATENÇÃO" if qtd_nulos > 0 else "OK"
+        print(f"{status} | {coluna}: {qtd_nulos} nulos ({pct:.2f}%)")
+        if qtd_nulos > 0:
+            problemas = True
+
+    if not problemas:
+        print("Nenhum nulo encontrado.")
+    return resultado
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Validando Nulos
+-----------------------------------------------------------------
+
+gold_metas_vs_resultado = (
+    indicador_municipio_gold.alias("realizado")
+    .join(
+        meta_municipio_longo.alias("meta"),
+        (F.col("realizado.id_municipio") == F.col("meta.id_municipio"))
+        & (F.col("realizado.ano") == F.col("meta.ano_meta"))
+        & (F.col("realizado.rede") == F.col("meta.rede")),
+        "left"
+    )
+    .select(
+        F.col("realizado.ano").alias("ano"),
+        F.col("realizado.id_municipio").alias("id_municipio"),
+        F.col("realizado.id_municipio_nome").alias("id_municipio_nome"),
+        F.col("realizado.rede").alias("rede"),
+        F.col("realizado.taxa_alfabetizacao").alias("taxa_realizada"),
+        F.col("meta.meta_taxa_alfabetizacao").alias("meta_taxa_alfabetizacao"),
+        (F.col("realizado.taxa_alfabetizacao") - F.col("meta.meta_taxa_alfabetizacao")).alias("gap_meta"),
+        F.col("realizado.origem").alias("origem"),
+    )
+)
+
+validar_nulos(gold_metas_vs_resultado, ["meta_taxa_alfabetizacao"], nome_tabela="gold_metas_vs_resultado")
+
+
+-- entendendo se a causa dos nulos para o calculo da meta esta certa ou se existe algo na base de dados 
+-- os rotulos de redes batem? 
+
+print("Valores distintos de 'rede' no INDICADOR:")
+indicador_municipio_gold.select("rede").distinct().show(truncate=False)
+
+print("Valores distintos de 'rede' na META:")
+meta_municipio_longo.select("rede").distinct().show(truncate=False)
+
+-- cobertura de cidade_ano batem? 
+
+municipios_indicador = indicador_municipio_gold.select("id_municipio", "ano").distinct().count()
+municipios_meta = meta_municipio_longo.select("id_municipio", "ano_meta").distinct().count()
+
+print(f"Combinações município+ano no INDICADOR: {municipios_indicador}")
+print(f"Combinações município+ano na META: {municipios_meta}")
+
+-- os duplicados estao vindo da injestao em batch ou streaming (tambem valida de o set up foi feito de forma correta)
+
+subset_valido = indicador_municipio_gold.filter(
+    (F.col("rede") == "Municipal") & (F.col("ano") >= 2024)
+)
+
+gold_metas_vs_resultado_teste = (
+    subset_valido.alias("realizado")
+    .join(
+        meta_municipio_longo.alias("meta"),
+        (F.col("realizado.id_municipio") == F.col("meta.id_municipio"))
+        & (F.col("realizado.ano") == F.col("meta.ano_meta"))
+        & (F.col("realizado.rede") == F.col("meta.rede")),
+        "left"
+    )
+    .select(
+        F.col("realizado.id_municipio"),
+        F.col("realizado.ano"),
+        F.col("meta.meta_taxa_alfabetizacao"),
+    )
+)
+
+validar_nulos(gold_metas_vs_resultado_teste, ["meta_taxa_alfabetizacao"], nome_tabela="subset_municipal_2024+")
+
+--- entendendo se existe nulos por razoes diferentes 
+
+# Município+ano+rede do subset que NÃO tem correspondência nenhuma na meta (anti join)
+sem_correspondencia = subset_valido.join(
+    meta_municipio_longo,
+    (subset_valido["id_municipio"] == meta_municipio_longo["id_municipio"])
+    & (subset_valido["ano"] == meta_municipio_longo["ano_meta"])
+    & (subset_valido["rede"] == meta_municipio_longo["rede"]),
+    "left_anti"
+)
+
+qtd_sem_correspondencia = sem_correspondencia.count()
+print(f"Linhas sem NENHUMA correspondência na meta (chave ausente): {qtd_sem_correspondencia}")
+print(f"Linhas com correspondência mas valor nulo na fonte: {216 - qtd_sem_correspondencia}")
+
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Gravando a tabela 2 na Gold
+-----------------------------------------------------------------
+
+
+
+gold_metas_vs_resultado = (
+    indicador_municipio_gold
+    .filter((F.col("rede") == "Municipal") & (F.col("ano") >= 2024))
+    .alias("realizado")
+    .join(
+        meta_municipio_longo.alias("meta"),
+        (F.col("realizado.id_municipio") == F.col("meta.id_municipio"))
+        & (F.col("realizado.ano") == F.col("meta.ano_meta"))
+        & (F.col("realizado.rede") == F.col("meta.rede")),
+        "left"
+    )
+    .select(
+        F.col("realizado.ano").alias("ano"),
+        F.col("realizado.id_municipio").alias("id_municipio"),
+        F.col("realizado.id_municipio_nome").alias("id_municipio_nome"),
+        F.col("realizado.taxa_alfabetizacao").alias("taxa_realizada"),
+        F.col("meta.meta_taxa_alfabetizacao").alias("meta_taxa_alfabetizacao"),
+        (F.col("realizado.taxa_alfabetizacao") - F.col("meta.meta_taxa_alfabetizacao")).alias("gap_meta"),
+        F.col("realizado.origem").alias("origem"),
+    )
+    .withColumn(
+        "meta_atingida",
+        F.when(F.col("gap_meta").isNull(), F.lit(None))
+         .when(F.col("gap_meta") >= 0, F.lit(True))
+         .otherwise(F.lit(False))
+    )
+)
+
+(
+    gold_metas_vs_resultado.write
+    .format("delta")
+    .mode("overwrite")
+    .saveAsTable("bd_alfabetizacao_gold.default.metas_vs_resultado_municipio")
+)
+
+print(f"OK: {gold_metas_vs_resultado.count()} linhas gravadas")
+
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+-- Desenhando a tabela anual 
+-----------------------------------------------------------------
+
+indicador_uf_silver_completo = spark.table("bd_alfabetizacao_silver.default.indicador_alfabetizacao_uf")
+
+evolucao_temporal_uf = (
+    indicador_uf_silver_completo
+    .groupBy("ano", "sigla_uf", "sigla_uf_nome", "rede")
+    .agg(
+        F.avg("taxa_alfabetizacao").alias("taxa_alfabetizacao_media"),
+        F.avg("media_portugues").alias("media_portugues_media")
+    )
+)
+
+evolucao_temporal_nacional = (
+    indicador_uf_silver_completo
+    .groupBy("ano", "rede")
+    .agg(
+        F.avg("taxa_alfabetizacao").alias("taxa_alfabetizacao_media"),
+        F.avg("media_portugues").alias("media_portugues_media")
+    )
+    .withColumn("sigla_uf", F.lit("BR"))
+    .withColumn("sigla_uf_nome", F.lit("Brasil"))
+)
+
+evolucao_temporal_gold = evolucao_temporal_uf.unionByName(evolucao_temporal_nacional)
+
+(
+    evolucao_temporal_gold.write
+    .format("delta")
+    .mode("overwrite")
+    .saveAsTable("bd_alfabetizacao_gold.default.evolucao_temporal_indicador")
+)
+
+print(f"OK: {evolucao_temporal_gold.count()} linhas gravadas")
