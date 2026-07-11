@@ -52,6 +52,7 @@ def decode_column(df, id_tabela, coluna):
             "left"
         )
         .drop("_chave_lookup")
+)
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
 --- Aplicando na tabela
