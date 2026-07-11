@@ -1,0 +1,320 @@
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Carregando as tableas da parte 01
+-----------------------------------------------------------------
+uf = spark.table("bd_alfabetizacao_bronze.default.uf")
+municipio = spark.table("bd_alfabetizacao_bronze.default.municipio")
+indicador_uf = spark.table("bd_alfabetizacao_bronze.default.uf_alfabetizacao")
+indicador_municipio = spark.table("bd_alfabetizacao_bronze.default.indicador_alfabetizacao_municipio")
+meta_brasil = spark.table("bd_alfabetizacao_bronze.default.meta_alfabetizacao_brasil")
+meta_uf = spark.table("bd_alfabetizacao_bronze.default.meta_alfabetizacao_uf")
+meta_municipio = spark.table("bd_alfabetizacao_bronze.default.meta_alfabetizacao_municipio")
+dicionario = spark.table("bd_alfabetizacao_bronze.default.dicionario")
+alunos = spark.table("bd_alfabetizacao_bronze.default.alunos")
+
+print("Tabelas carregadas com sucesso")
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Entendendo as tabelas e como elas podem se integras (joins, colunas duplicadas...)
+-----------------------------------------------------------------
+
+display(dicionario.limit(20))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Codificando rede de uma forma rastreavel
+------------------------------------------------------------------- 
+
+from pyspark.sql import functions as F
+
+def decode_column(df, id_tabela, coluna):
+    """
+    Decodifica uma coluna de código usando a base Bronze.
+    Mantendo a coluna original como 'coluna_codigo' e adiciona
+    a descrição decodificada na coluna.
+    """
+    lookup = (
+        dicionario
+        .filter((F.col("id_tabela") == id_tabela) & (F.col("nome_coluna") == coluna))
+        .select(
+            F.col("chave").alias("_chave_lookup"),
+            F.col("valor").alias(coluna)
+        )
+    )
+    return (
+        df.withColumnRenamed(coluna, f"{coluna}_codigo")
+        .join(
+            lookup,
+            F.col(f"{coluna}_codigo") == F.col("_chave_lookup"),
+            "left"
+        )
+        .drop("_chave_lookup")
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Aplicando na tabela
+-------------------------------------------------------------------     
+
+
+indicador_uf_silver = decode_column(indicador_uf, id_tabela="uf", coluna="rede")
+
+display(indicador_uf_silver.limit(10))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Codificando serie
+-------------------------------------------------------------------    
+
+indicador_uf_silver = decode_column(indicador_uf_silver, id_tabela="uf", coluna="serie")
+
+display(indicador_uf_silver.limit(10))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Validando a Alteracao
+-------------------------------------------------------------------
+
+display(indicador_uf_silver.select("serie_codigo", "serie", "rede_codigo", "rede").limit(10))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Codificando seguindo a mesma idea na tabela indicador municipio padas as mesmas colunas
+-------------------------------------------------------------------  
+
+indicador_municipio_silver = decode_column(indicador_municipio, id_tabela="municipio", coluna="rede")
+indicador_municipio_silver = decode_column(indicador_municipio_silver, id_tabela="municipio", coluna="serie")
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Codificando seguindo a mesma idea na tabela alunos
+-------------------------------------------------------------------  
+
+alunos_silver = decode_column(alunos, id_tabela="alunos", coluna="rede")
+alunos_silver = decode_column(alunos_silver, id_tabela="alunos", coluna="serie")
+alunos_silver = decode_column(alunos_silver, id_tabela="alunos", coluna="presenca")
+alunos_silver = decode_column(alunos_silver, id_tabela="alunos", coluna="preenchimento_caderno")
+alunos_silver = decode_column(alunos_silver, id_tabela="alunos", coluna="alfabetizado")
+
+display(alunos_silver.limit(10))
+
+display(indicador_municipio_silver.select("serie_codigo", "serie", "rede_codigo", "rede").limit(10))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Adicionando o nome do estado nas tabelas que so tem codigo
+-------------------------------------------------------------------  
+
+uf_lookup = uf.select(
+    F.col("sigla").alias("_sigla_lookup"),
+    F.col("nome").alias("sigla_uf_nome")
+)
+
+indicador_uf_silver = (
+    indicador_uf_silver
+    .join(uf_lookup, indicador_uf_silver["sigla_uf"] == uf_lookup["_sigla_lookup"], "left")
+    .drop("_sigla_lookup")
+)
+
+display(indicador_uf_silver.select("sigla_uf", "sigla_uf_nome").distinct())
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Adicionando o nome do Municipio nas tabelas que so tem codigo
+-------------------------------------------------------------------  
+
+municipio_lookup = municipio.select(
+    F.col("id_municipio").alias("_id_municipio_lookup"),
+    F.col("nome").alias("id_municipio_nome")
+)
+
+indicador_municipio_silver = (
+    indicador_municipio_silver
+    .join(municipio_lookup, indicador_municipio_silver["id_municipio"] == municipio_lookup["_id_municipio_lookup"], "left")
+    .drop("_id_municipio_lookup")
+)
+
+alunos_silver = (
+    alunos_silver
+    .join(municipio_lookup, alunos_silver["id_municipio"] == municipio_lookup["_id_municipio_lookup"], "left")
+    .drop("_id_municipio_lookup")
+)
+
+display(indicador_municipio_silver.select("id_municipio", "id_municipio_nome").limit(10))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Validando se Existe nulos apos essas transformacoes 
+-------------------------------------------------------------------  
+
+def validar_nulos(df, colunas, nome_tabela=""):
+    """
+    Conta nulos em cada coluna .
+    Aviso de tiver nulo.
+    """
+    total = df.count()
+    resultado = df.select([
+        F.sum(F.col(c).isNull().cast("int")).alias(c) for c in colunas
+    ]).collect()[0].asDict()
+
+    print(f"--- Validação de nulos: {nome_tabela} (total de linhas: {total}) ---")
+    problemas = False
+    for coluna, qtd_nulos in resultado.items():
+        pct = (qtd_nulos / total * 100) if total > 0 else 0
+        status = "⚠️ ATENÇÃO" if qtd_nulos > 0 else "OK"
+        print(f"{status} | {coluna}: {qtd_nulos} nulos ({pct:.2f}%)")
+        if qtd_nulos > 0:
+            problemas = True
+
+    if not problemas:
+        print("Nenhum nulo encontrado.")
+    return resultado
+
+-------------------------------------------------------------------  
+-------------------------------------------------------------------  
+
+validar_nulos(indicador_uf_silver, ["sigla_uf_nome"], nome_tabela="indicador_uf_silver")
+validar_nulos(indicador_municipio_silver, ["id_municipio_nome"], nome_tabela="indicador_municipio_silver")
+validar_nulos(alunos_silver, ["id_municipio_nome"], nome_tabela="alunos_silver")
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Analisando as Tabelas metas antes de aplicacar qualquer codificacao ja que, de acordo com o SQL da base de dados, nao tem join de decodificacao com o dicionario. 
+--- Fonte dos SQL scripts: https://basedosdados.org/dataset/073a39d4-89cf-4068-b1e8-34ed0d9c0b72?table=bb27c746-18df-4ba8-8f98-5110232e2162
+------------------------------------------------------------------- 
+
+meta_brasil.printSchema()
+display(meta_brasil.limit(5))
+
+--------------
+
+meta_uf.printSchema()
+display(meta_uf.limit(5))
+
+--------------
+
+meta_municipio.printSchema()
+display(meta_municipio.limit(5))
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Checando se a coluna de nivel de alfabetizacao na tabela meta_municipio esta no dicionario, porque ela aparece ser binaria (alfabetizado/nao alfabetizado) e nao aparece nas outras tabelas de meta. 
+-- As outras tabelas de metas em outros niveis ja tem uma coluna de taxa de alfabetizacao, entao precisamos validar se a taxa esta sendo calculada de baixo para cima (municipio>estado>pais)
+------------------------------------------------------------------- 
+
+display(meta_municipio.select("nivel_alfabetizacao").distinct()) -- nao e binaria 
+
+--------------
+
+(
+    meta_municipio
+    .groupBy("nivel_alfabetizacao")
+    .agg(
+        F.count("*").alias("qtd_municipios"),
+        F.avg("taxa_alfabetizacao").alias("media_taxa_alfabetizacao"),
+        F.avg("percentual_participacao").alias("media_percentual_participacao")
+    )
+    .orderBy("nivel_alfabetizacao")
+    .display()
+)
+--OBS. As faixas de nivel de alfabetizacao aumentam e dao match com as porcentagens de alfabetizacao nas outras metas, o que prova correlacao entre as essas colunas. Porem, por hora, nao irei fazer nenhuma alteracao de classificacao utilizando essa coluna, sem uma validacao do negocio em termos de "QUAL SAO AS PORCENTAGES DE FAIXA PARA CADA NIVEL" 
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Fazendo look up das Metas UF e Municipio 
+------------------------------------------------------------------- 
+
+meta_uf_silver = (
+    meta_uf
+    .join(uf_lookup, meta_uf["sigla_uf"] == uf_lookup["_sigla_lookup"], "left")
+    .drop("_sigla_lookup")
+)
+
+meta_municipio_silver = (
+    meta_municipio
+    .join(municipio_lookup, meta_municipio["id_municipio"] == municipio_lookup["_id_municipio_lookup"], "left")
+    .drop("_id_municipio_lookup")
+)
+
+meta_brasil_silver = meta_brasil  # nível nacional, sem enriquecimento necessário
+
+validar_nulos(meta_uf_silver, ["sigla_uf_nome"], nome_tabela="meta_uf_silver")
+validar_nulos(meta_municipio_silver, ["id_municipio_nome"], nome_tabela="meta_municipio_silver")
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Checkando Dados Duplicados  
+------------------------------------------------------------------- 
+
+def validar_duplicidade(df, chave, nome_tabela=""):
+    """
+    Verifica se a combinação de colunas em chave é única.
+    Retorna as linhas duplicadas.
+    """
+    total = df.count()
+    duplicados = (
+        df.groupBy(*chave)
+        .count()
+        .filter(F.col("count") > 1)
+    )
+    qtd_duplicados = duplicados.count()
+
+    print(f"--- Validação de duplicidade: {nome_tabela} (chave: {chave}) ---")
+    if qtd_duplicados == 0:
+        print(f"OK | Nenhuma duplicidade encontrada em {total} linhas.")
+    else:
+        print(f"⚠️ ATENÇÃO | {qtd_duplicados} combinações de chave duplicadas encontradas.")
+        display(duplicados)
+    return duplicados
+
+
+---------- 
+
+validar_duplicidade(uf, ["sigla"], "uf")
+validar_duplicidade(municipio, ["id_municipio"], "municipio")
+validar_duplicidade(indicador_uf_silver, ["ano", "sigla_uf", "serie_codigo", "rede_codigo"], "indicador_uf_silver")
+validar_duplicidade(indicador_municipio_silver, ["ano", "id_municipio", "serie_codigo", "rede_codigo"], "indicador_municipio_silver")
+validar_duplicidade(meta_brasil_silver, ["ano", "rede"], "meta_brasil_silver")
+validar_duplicidade(meta_uf_silver, ["ano", "sigla_uf", "rede"], "meta_uf_silver")
+validar_duplicidade(meta_municipio_silver, ["ano", "id_municipio", "rede"], "meta_municipio_silver")
+validar_duplicidade(alunos_silver, ["id_aluno"], "alunos_silver") --- encontrei duplicados nessa tabela 
+
+--- Checkando duplicados, com chave composta combinando id com outras colunas (alunos e ano)
+
+validar_duplicidade(alunos_silver, ["id_aluno", "ano"], "alunos_silver (id_aluno+ano)") -- nao tem duplicidade, o que leva ao insight de que cada aluno tem um id por ano, e o mesmo aluno pode aparecer em anos diferentes se repetiu série ou outras razoes
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Gravando na Camada Silver  
+------------------------------------------------------------------- 
+
+spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_silver")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_silver.default")
+
+---------
+
+tabelas_silver = {
+    "uf": uf,
+    "municipio": municipio,
+    "indicador_alfabetizacao_uf": indicador_uf_silver,
+    "indicador_alfabetizacao_municipio": indicador_municipio_silver,
+    "meta_alfabetizacao_brasil": meta_brasil_silver,
+    "meta_alfabetizacao_uf": meta_uf_silver,
+    "meta_alfabetizacao_municipio": meta_municipio_silver,
+    "alunos": alunos_silver,
+}
+
+for nome, df in tabelas_silver.items():
+    (
+        df.write
+        .format("delta")
+        .mode("overwrite")
+        .saveAsTable(f"bd_alfabetizacao_silver.default.{nome}")
+    )
+    print(f"OK: {nome} -> {df.count()} linhas gravadas")
+
+
+---- A SEQUENCIA DO SCRPIT PRECISA DE ALGUMAS ALTERACOES - OS CODIGOS EM SI ESTAO CORRETOR, APENAS A ORDEM DE EXECUCAO TALVEZ TENHA ERROS 
+
