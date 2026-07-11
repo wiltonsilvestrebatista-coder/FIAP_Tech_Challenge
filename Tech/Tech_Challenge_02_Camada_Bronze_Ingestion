@@ -182,7 +182,39 @@ print(f"OK: alunos -> {df_alunos.count()} linhas")
 
 display(spark.sql("SHOW TABLES IN bd_alfabetizacao_bronze.default"))
 
+-----------------------------------------------------------------
+--- Monitoramento - Criacao do catalog
+-----------------------------------------------------------------
+
+spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_monitoramento")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_monitoramento.default")
+
+-----------------------------------------------------------------
+--- Monitoramento - Criacao da funcao log
+-----------------------------------------------------------------
+
+import time
+from datetime import datetime, timezone
+
+def log_execucao(camada, tabela, linhas, tempo_segundos, status="sucesso", mensagem=""):
+    log_df = spark.createDataFrame([{
+        "timestamp_execucao": datetime.now(timezone.utc).isoformat(),
+        "camada": camada,
+        "tabela": tabela,
+        "linhas_processadas": linhas,
+        "tempo_execucao_segundos": round(tempo_segundos, 2),
+        "status": status,
+        "mensagem": mensagem,
+    }])
+    log_df.write.format("delta").mode("append").saveAsTable(
+        "bd_alfabetizacao_monitoramento.default.log_execucoes"
+    )
+
+
+
 
 -----------------------------------------------------------------
 --- Fim da Camada Bronze - com injestao feita com os dados brutos. 
 -----------------------------------------------------------------
+
+
