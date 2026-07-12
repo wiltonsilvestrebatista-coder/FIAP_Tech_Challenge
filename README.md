@@ -1,4 +1,5 @@
-/># Pipeline Híbrido para Análise da Alfabetização no Brasil
+## Pipeline Híbrido para Análise da Alfabetização no Brasil
+
 
 Tech Challenge – Fase 2 | Arquitetura de Dados (Batch + Streaming) utilizando Databricks e Google Cloud 
 
@@ -25,7 +26,7 @@ Este projeto constrói a infraestrutura de dados que torna essas perguntas respo
 
 A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via BigQuery/Base dos Dados) e **Databricks** (processamento, armazenamento analítico e orquestração), seguindo a **Arquitetura Medalhão** (Bronze > Silver > Gold) com ingestão híbrida **batch + streaming**.
 
-<img width="1600" height="1150" alt="arquitetura_pipeline" src="https://github.com/user-attachments/assets/a589184b-ec07-40c5-a8e8-50b4d113080a" 
+<img width="2400" height="1725" alt="arquitetura_pipeline" src="https://github.com/user-attachments/assets/aecd4602-f887-41f0-a713-c579417e145f" />
 
 
 **Evidência de execução real**: o Job orquestrado rodando de ponta a ponta no Databricks Workflows, com as 4 tasks sendo concluídas com sucesso:
