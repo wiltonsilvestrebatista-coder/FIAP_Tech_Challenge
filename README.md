@@ -4,24 +4,26 @@ Tech Challenge – Fase 2 | Arquitetura de Dados (Batch + Streaming) utilizando 
 
 ---
 
-## 1. Contexto do Problema
+## 1. Contexto do Problema & Desafio Educacional
 
-A não alfabetização infantil é uma das principais barreiras ao desenvolvimento educacional, social e econômico do Brasil. O **Compromisso Nacional Criança Alfabetizada** mobiliza União, estados, Distrito Federal e municípios para garantir que todas as crianças estejam alfabetizadas até o final do 2º ano do Ensino Fundamental, com meta nacional de universalização até 2030.
+A não alfabetização infantil é uma das principais barreiras ao desenvolvimento educacional, social e econômico do Brasil. O **Compromisso Nacional Criança Alfabetizada** mobiliza União, estados e municípios para garantir que todas as crianças estejam alfabetizadas até o final do 2º ano do Ensino Fundamental, com meta nacional de universalização até 2030.
 
-Para tornar esse objetivo mensurável, o INEP realizou em 2023 a **Pesquisa Alfabetiza Brasil**, que definiu **743 pontos** na escala de proficiência do SAEB como o corte a partir do qual uma criança é considerada alfabetizada. Esse parâmetro deu origem ao **Indicador Criança Alfabetizada**: o percentual de estudantes que atingem esse patamar.
+Para tornar esse objetivo mensurável, o INEP realizou em 2023 a **Pesquisa Alfabetiza Brasil**, que definiu que **743 pontos** na escala de proficiência do SAEB seria o corte a partir do qual uma criança é considerada alfabetizada. Esse parâmetro deu origem ao **Indicador Criança Alfabetizada**: o percentual de estudantes que atingem esse patamar.
 
-Medir o indicador é o primeiro passo — o segundo, e o que este pipeline endereça diretamente, é permitir a **comparação sistemática entre meta e resultado real**, por município, estado e ano, para identificar:
-- **Onde** as metas estão sendo atingidas e onde não estão;
-- **Quais fatores regionais** (rede de ensino, série, contexto territorial) se associam a sucesso ou fracasso na alfabetização;
+Medir o indicador é o primeiro passo. O segundo, e o que este pipeline endereça diretamente, é permitir a **comparação entre meta e resultado**, por município, estado e ano, para identificar:
+
+- **Onde** as metas estão sendo atingidas e onde não estão
+- **Quais fatores regionais** (rede de ensino, série) se associam a sucesso ou fracasso na alfabetização
 - **Como a tendência evolui no tempo**, para antecipar risco de não cumprimento da meta de 2030.
-
+- **E dessa forma, poder criar planos para atingimento das metas em todos os niveis**
+  
 Este projeto constrói a infraestrutura de dados que torna essas perguntas respondíveis de forma confiável, escalável e a baixo custo.
 
 ---
 
 ## 2. Arquitetura da Solução
 
-A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via BigQuery/Base dos Dados) e **Databricks** (processamento, armazenamento analítico e orquestração), seguindo a **Arquitetura Medalhão** (Bronze → Silver → Gold) com ingestão híbrida **batch + streaming**.
+A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via BigQuery/Base dos Dados) e **Databricks** (processamento, armazenamento analítico e orquestração), seguindo a **Arquitetura Medalhão** (Bronze > Silver > Gold) com ingestão híbrida **batch + streaming**.
 
 ```mermaid
 flowchart TB
@@ -76,7 +78,8 @@ flowchart TB
 
 **Evidência de execução real** — o Job orquestrado rodando de ponta a ponta no Databricks Workflows, com as 4 tasks do DAG concluídas com sucesso:
 
-![Execução do Job no Databricks Workflows](docs/images/job_run_databricks.png)
+<img width="1436" height="880" alt="job_run_databricks" src="https://github.com/user-attachments/assets/1ee8792e-472a-4094-bc8a-db986a08c9f2" />
+
 
 *Run concluído em 5m 4s (`ingestao_bronze`: 1m49s, `streaming_indicador`: 49s em paralelo, `transformacao_silver`: 2m30s, `transformacao_gold`: 43s), com lineage automático de 15 tabelas upstream e 23 tabelas downstream rastreadas pelo Unity Catalog.*
 
