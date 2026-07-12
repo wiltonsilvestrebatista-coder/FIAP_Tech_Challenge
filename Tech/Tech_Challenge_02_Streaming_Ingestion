@@ -12,6 +12,16 @@ display(spark.sql("DESCRIBE VOLUME bd_alfabetizacao_bronze.default.streaming_lan
 
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
+-- Criando o outros volumes para validacao
+-----------------------------------------------------------------
+
+caminho_landing = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"
+caminho_checkpoint = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_checkpoint"
+caminho_schema = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_schema"
+
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
 -- Criando a funcao que simula os eventos (gerando um novo indicador a cada execução)
 -----------------------------------------------------------------
 
@@ -99,15 +109,37 @@ simular_evento_indicador()
 
 display(dbutils.fs.ls("/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"))
 
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Criando o log erro 
+-----------------------------------------------------------------
+
+
+import time
+from datetime import datetime, timezone
+
+def log_execucao(camada, tabela, linhas, tempo_segundos, status="sucesso", mensagem=""):
+    log_df = spark.createDataFrame([{
+        "timestamp_execucao": datetime.now(timezone.utc).isoformat(),
+        "camada": camada,
+        "tabela": tabela,
+        "linhas_processadas": linhas,
+        "tempo_execucao_segundos": round(tempo_segundos, 2),
+        "status": status,
+        "mensagem": mensagem,
+    }])
+    log_df.write.format("delta").mode("append").saveAsTable(
+        "bd_alfabetizacao_monitoramento.default.log_execucoes"
+    )
+
+
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
 --- Configurando o Auto Loader (Streaming Estruturado)
 --- vai ler os arquivos JSON (só os novos, sem reprocessar os que já esta la) e gravar na Bronze como uma tabela streaming, em modo append
 -----------------------------------------------------------------
 
-caminho_landing = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing"
-caminho_checkpoint = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_checkpoint"
-caminho_schema = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_schema"
 
 df_stream = (
     spark.readStream
@@ -118,15 +150,24 @@ df_stream = (
 )
 
 query = (
-    df_stream.writeStream
-    .format("delta")
-    .option("checkpointLocation", caminho_checkpoint)
-    .outputMode("append")
-    .trigger(availableNow=True)
-    .toTable("bd_alfabetizacao_bronze.default.indicador_municipio_streaming")
-)
+        df_stream.writeStream
+        .format("delta")
+        .option("checkpointLocation", caminho_checkpoint)
+        .outputMode("append")
+        .trigger(availableNow=True)
+        .toTable("bd_alfabetizacao_bronze.default.indicador_municipio_streaming")
+    )
 
-query.awaitTermination()
+    query.awaitTermination()
+
+    linhas_processadas = (query.recentProgress[-1].get("numInputRows") or 0) if query.recentProgress else 0
+    tempo = time.time() - inicio
+    log_execucao("bronze", "indicador_municipio_streaming", linhas_processadas, tempo, "sucesso")
+    print(f"OK: streaming processou {linhas_processadas} linhas novas ({tempo:.1f}s)")
+except Exception as e:
+    tempo = time.time() - inicio
+    log_execucao("bronze", "indicador_municipio_streaming", 0, tempo, "falha", str(e))
+    raise
 
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
