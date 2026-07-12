@@ -1,5 +1,27 @@
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
+-- Criando o Log de erro antes de qualquer transformacao 
+-----------------------------------------------------------------
+
+import time
+from datetime import datetime, timezone
+
+def log_execucao(camada, tabela, linhas, tempo_segundos, status="sucesso", mensagem=""):
+    log_df = spark.createDataFrame([{
+        "timestamp_execucao": datetime.now(timezone.utc).isoformat(),
+        "camada": camada,
+        "tabela": tabela,
+        "linhas_processadas": linhas,
+        "tempo_execucao_segundos": round(tempo_segundos, 2),
+        "status": status,
+        "mensagem": mensagem,
+    }])
+    log_df.write.format("delta").mode("append").saveAsTable(
+        "bd_alfabetizacao_monitoramento.default.log_execucoes"
+    )
+
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
 -- Lendo as duas fontes da Silver (Batch + Streaming) e comparar schemas antes de unir
 -----------------------------------------------------------------
 
@@ -87,14 +109,22 @@ indicador_streaming_padronizado = (
 
 indicador_municipio_gold = indicador_batch_padronizado.unionByName(indicador_streaming_padronizado)
 
-(
-    indicador_municipio_gold.write
-    .format("delta")
-    .mode("overwrite")
-    .saveAsTable("bd_alfabetizacao_gold.default.indicador_alfabetizacao_municipio")
-)
-
-print(f"OK: {indicador_municipio_gold.count()} linhas na Gold (batch + streaming)")
+inicio = time.time()
+try:
+    (
+        indicador_municipio_gold.write
+        .format("delta")
+        .mode("overwrite")
+        .saveAsTable("bd_alfabetizacao_gold.default.indicador_alfabetizacao_municipio")
+    )
+    linhas = indicador_municipio_gold.count()
+    tempo = time.time() - inicio
+    log_execucao("gold", "indicador_alfabetizacao_municipio", linhas, tempo, "sucesso")
+    print(f"OK: {linhas} linhas na Gold (batch + streaming) ({tempo:.1f}s)")
+except Exception as e:
+    tempo = time.time() - inicio
+    log_execucao("gold", "indicador_alfabetizacao_municipio", 0, tempo, "falha", str(e))
+    raise
 
 
 print("Colunas batch:", sorted(indicador_batch_padronizado.columns))
@@ -274,15 +304,22 @@ gold_metas_vs_resultado = (
     )
 )
 
-(
-    gold_metas_vs_resultado.write
-    .format("delta")
-    .mode("overwrite")
-    .saveAsTable("bd_alfabetizacao_gold.default.metas_vs_resultado_municipio")
-)
-
-print(f"OK: {gold_metas_vs_resultado.count()} linhas gravadas")
-
+inicio = time.time()
+try:
+    (
+        gold_metas_vs_resultado.write
+        .format("delta")
+        .mode("overwrite")
+        .saveAsTable("bd_alfabetizacao_gold.default.metas_vs_resultado_municipio")
+    )
+    linhas = gold_metas_vs_resultado.count()
+    tempo = time.time() - inicio
+    log_execucao("gold", "metas_vs_resultado_municipio", linhas, tempo, "sucesso")
+    print(f"OK: {linhas} linhas gravadas ({tempo:.1f}s)")
+except Exception as e:
+    tempo = time.time() - inicio
+    log_execucao("gold", "metas_vs_resultado_municipio", 0, tempo, "falha", str(e))
+    raise
 
 
 -----------------------------------------------------------------
@@ -314,11 +351,19 @@ evolucao_temporal_nacional = (
 
 evolucao_temporal_gold = evolucao_temporal_uf.unionByName(evolucao_temporal_nacional)
 
-(
-    evolucao_temporal_gold.write
-    .format("delta")
-    .mode("overwrite")
-    .saveAsTable("bd_alfabetizacao_gold.default.evolucao_temporal_indicador")
-)
-
-print(f"OK: {evolucao_temporal_gold.count()} linhas gravadas")
+inicio = time.time()
+try:
+    (
+        evolucao_temporal_gold.write
+        .format("delta")
+        .mode("overwrite")
+        .saveAsTable("bd_alfabetizacao_gold.default.evolucao_temporal_indicador")
+    )
+    linhas = evolucao_temporal_gold.count()
+    tempo = time.time() - inicio
+    log_execucao("gold", "evolucao_temporal_indicador", linhas, tempo, "sucesso")
+    print(f"OK: {linhas} linhas gravadas ({tempo:.1f}s)")
+except Exception as e:
+    tempo = time.time() - inicio
+    log_execucao("gold", "evolucao_temporal_indicador", 0, tempo, "falha", str(e))
+    raise
