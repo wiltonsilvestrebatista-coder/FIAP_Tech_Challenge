@@ -49,16 +49,16 @@ A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via 
 4. A camada **Gold** consolida os dados tratados em 3 tabelas analíticas prontas para consumo.
 
 **Streaming (simulado):**
-1. Um notebook simulador gera eventos JSON representando novas medições do indicador, gravando-os em uma **Unity Catalog Volume** (landing zone).
-2. O **Auto Loader** (Spark Structured Streaming) lê esses arquivos incrementalmente — só os novos, sem reprocessar — e grava na Bronze em modo `append`.
-3. O mesmo pipeline de decodificação/enriquecimento da Silver batch é aplicado ao streaming.
-4. Na Gold, os dados de streaming são unidos (`UNION`) aos dados batch na tabela de indicador por município.
+1. Um notebook simulador gera eventos JSON representando novas medições do indicador, gravando-os em uma **Unity Catalog Volume** (landing zone). Importante clarificar, que foi utilizado um simulador para teste de que o pipeline inteiro rodaria sem problemas, caso fosse um caso real, o set up teria que ser diferente. 
+2. O **Auto Loader** (Spark Structured Streaming) lê esses arquivos incrementalmente (só os novos, sem reprocessar os arquivos ja lidos) e grava na Bronze em modo **append**.
+3. O mesmo pipeline de codificação/enriquecimento da Silver batch é aplicado ao streaming.
+4. Na Gold, os dados de streaming são unidos pela **UNION** aos dados batch na tabela de indicador por município.
 
 **Orquestração (Workflows/Jobs):**
-1. Todo o fluxo acima é encapsulado em um **Job do Databricks Workflows**, com 4 tasks organizadas em DAG: `ingestao_bronze` e `streaming_indicador` rodam em paralelo (fontes independentes); `transformacao_silver` depende de ambas; `transformacao_gold` depende da Silver.
-2. Cada task tem **retries automáticos** (2 tentativas, 10 min de intervalo) e **notificação por e-mail** em caso de sucesso ou falha.
+1. Todo o fluxo acima é encapsulado em um **Job do Databricks Workflows**, com 4 tasks organizadas em DAG: **ingestao_bronze** e **streaming_indicador** rodam em paralelo (ja que sao fontes independentes); **transformacao_silver** depende de ambas para comecar a rodar e a  **transformacao_gold** depende da Silver acontecer sem erros.
+2. Cada task tem **retries automáticos** (2 tentativas, 15 min de intervalo) e **notificação por e-mail** em caso de sucesso ou falha.
 3. O Job roda em um **schedule recorrente a cada 2 semanas**.
-4. Cada execução registra **linhas processadas e tempo de execução** em uma tabela de log (`log_execucoes`), consultável para auditoria e análise de tendência operacional.
+4. Cada execução registra **linhas processadas e tempo de execução** em uma tabela de log (**log_execucoes**), consultável para auditoria e análise de tendência operacional.
 
 ---
 
@@ -67,30 +67,30 @@ A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via 
 | Tecnologia | Papel no pipeline | Justificativa |
 |---|---|---|
 | **Google BigQuery** | Fonte de dados (Base dos Dados) | Única plataforma onde a Base dos Dados publica os datasets educacionais |
-| **Google Cloud IAM (Service Account)** | Autenticação segura Databricks ↔ BigQuery | Acesso de leitura escopado (least privilege: só `User` + `Data Viewer`), sem expor credenciais de usuário |
+| **Google Cloud IAM (Service Account)** | Autenticação segura Databricks ↔ BigQuery | Acesso de leitura (least privilege: só `User` + `Data Viewer`), sem expor credenciais de usuário |
 | **Databricks Free Edition** | Processamento, armazenamento (Delta Lake), orquestração | Serverless (zero gestão de infraestrutura), gratuito, com Unity Catalog, Workflows e Structured Streaming nativos |
-| **Spark BigQuery Connector** | Leitura das tabelas de origem | Nativo do runtime Databricks; leitura tabela-a-tabela evita o limite de quota de schemas do Unity Catalog (ver seção 5) |
+| **Spark BigQuery Connector** | Leitura das tabelas de origem | Nativo do runtime Databricks; leitura tabela-a-tabela evita o limite de quota de schemas do Unity Catalog  |
 | **Delta Lake** | Formato de armazenamento das 3 camadas | ACID transactions, schema enforcement, time travel — resolve grande parte do requisito de qualidade de dados "de graça" |
 | **Unity Catalog** | Governança (catálogo por camada) | Isolamento de permissões entre Bronze/Silver/Gold/Monitoramento |
 | **Auto Loader (Structured Streaming)** | Ingestão streaming simulada | Processamento incremental nativo, sem necessidade de infraestrutura de mensageria externa |
-| **Databricks Workflows** | Orquestração, retries, notificações, schedule | Nativo da plataforma, sem custo de ferramenta externa (ex: Airflow) |
+| **Databricks Workflows** | Orquestração, retries, notificações, schedule | Nativo da plataforma, sem custo de ferramenta externa |
 
 ---
 
-## 5. Decisões Arquiteturais e Trade-offs
+## 5. Decisões de Arquitetura e Trade-offs
 
 | Decisão | Alternativa considerada | Motivo da escolha |
 |---|---|---|
-| **Databricks (Spark gerenciado) em vez de Hadoop/EMR operado manualmente** | Cluster Hadoop/YARN próprio (ex: AWS EMR) | Menor esforço operacional; a arquitetura Medalhão é nativa do ecossistema Delta Lake. Trade-off consciente: abre mão de controle direto sobre HDFS/YARN em favor de produtividade |
-| **Leitura tabela-a-tabela via Spark BigQuery Connector, não Lakehouse Federation (foreign catalog)** | Federar o projeto `basedosdados` inteiro como catálogo espelhado | O projeto `basedosdados` tem 186 datasets; espelhar todos como schemas excedeu a quota de 50 schemas do Free Edition (`UC_RESOURCE_QUOTA_EXCEEDED`). A leitura direcionada evita esse limite estrutural |
-| **Bronze sem joins/decodificação; toda integração na Silver** | Já aplicar os `LEFT JOIN` de enriquecimento (como nos SQLs originais da Base dos Dados) direto na ingestão | Preserva fidelidade ao dado bruto na Bronze (histórico auditável); centraliza toda lógica de transformação em um único lugar (Silver), facilitando manutenção |
-| **Colunas decodificadas mantêm código bruto + descrição (`rede_codigo` + `rede`)** | Sobrescrever o código pela descrição, como no SQL original da fonte | Rastreabilidade: permite auditar a decodificação a qualquer momento, sem depender de recontatar a fonte |
-| **Gold Table 2 (metas vs. resultado) filtrada para `rede = "Municipal"` e `ano >= 2024`** | Comparar todas as redes e anos disponíveis | Metas só existem para a rede Municipal a partir de 2024 (confirmado empiricamente: 78% de nulos fora desse filtro, caindo a ~4% dentro dele) |
-| **Gold Table 3 (evolução temporal) na granularidade UF, não microdado de aluno** | Agregar direto de `alunos` (3,87M linhas) | Performance e custo: a granularidade UF é suficiente para visualizar tendência nacional, sem processar volume desnecessário |
-| **Streaming com `trigger(availableNow=True)`, não streaming contínuo (always-on)** | Cluster streaming rodando 24/7 aguardando novos eventos | FinOps: processa o disponível e encerra, em vez de manter compute alocado esperando; mais barato em ambiente serverless com quota |
-| **Cadência do Job a cada 2 semanas (batch e streaming juntos)** | Jobs separados com frequências distintas (batch quinzenal, streaming a cada poucas horas) | Simplicidade operacional nesta fase do projeto; a fonte real (avaliação INEP/SAEB) tampouco é atualizada com alta frequência, então a cadência batch é defensável. Evolução natural seria separar as cadências para reforçar a narrativa de streaming "quase tempo real" |
+| **Databricks (Spark gerenciado) em vez de Hadoop/EMR operado manualmente** | Cluster Hadoop/YARN próprio (ex: AWS EMR) | Menor esforço operacional ja  que a arquitetura Medalhão é nativa do ecossistema Delta Lake.Porem abrindo mão de controle direto sobre HDFS/YARN em favor de produtividade |
+| **Leitura tabela-a-tabela via Spark BigQuery Connector, não Lakehouse Federation (foreign catalog)** | Federar o projeto `basedosdados` inteiro como catálogo espelhado | O projeto `basedosdados` tem 186 datasets e espelhar todos como schemas excedeu a quota de 50 schemas do Free Edition. A leitura somente dos datasets escolhidos evita esse limite (`UC_RESOURCE_QUOTA_EXCEEDED`) |
+| **Bronze sem joins com toda integração na Silver** | Já aplicar os `LEFT JOIN` (como nos SQLs originais da Base dos Dados) direto na ingestão | Preserva os dado brutos na Bronze (que facilita auditoria, e caso algo errado acontece em outras camadas) e centraliza toda lógica de transformação em um único lugar (Silver), facilitando manutenção |
+| **Colunas codificadas mantêm código bruto + descrição (`rede_codigo` + `rede`), por exemplo** | Sobrescrever o código pela descrição, como no SQL original da fonte | Aumenta a Rastreabilidade: permite auditar a codificação a qualquer momento, sem depender de recontatar a fonte e facilita processamento futuros para aplicacao em AI, com base em numeros e nao textos |
+| **Gold Table 2 (metas vs. resultado) filtrada para `rede = "Municipal"` e `ano >= 2024`** | Comparar todas as redes e anos disponíveis | Metas só existem para a rede Municipal a partir de 2024 (confirmado com testes dentro das camada silver: 78% de nulos fora desse filtro, caindo a ~4% dentro dele) |
+| **Gold Table 3 (evolução temporal) na granularidade UF, não por aluno** | Agregar direto de **alunos** (3,87M linhas) | Performance e custo: a granularidade UF é suficiente para visualizar tendência nacional, sem processar volume desnecessário, tambem imaginando o futuro onde os dados porem ser muito maiores |
+| **Streaming com `trigger(availableNow=True)`, não streaming contínuo** (always-on) | Cluster streaming rodando 24/7 aguardando novos eventos | FinOps: processa o disponível e encerra, em vez de manter compute alocado esperando; mais barato em ambiente serverless com quota ja que a meta nao tende a necessitar mudancas e atualizacoes frequentes |
+| **Cadência do Job a cada 2 semanas (batch e streaming juntos)** | Jobs separados com frequências distintas (batch quinzenal, streaming a cada poucas horas) | Simplicidade operacional nesta fase do projeto; a fonte real (avaliação INEP/SAEB) nao é atualizada com alta frequência, então a cadência batch é apropriada. Evolução natural seria separar as cadências para reforçar a narrativa de streaming "quase tempo real" |
 | **Catálogo por camada (`_bronze`, `_silver`, `_gold`, `_monitoramento`)**, não schemas dentro de um catálogo único | Um catálogo único com schemas por camada | Isolamento de governança: permite políticas de acesso diferentes por camada (ex: só o pipeline escreve na Bronze; analistas só leem a Gold) |
-| **`nivel_alfabetizacao` (escala 0–5) mantido sem decodificação de faixas** | Inferir e documentar limites de corte para cada nível | Validado empiricamente que é uma escala ordinal com correlação monotônica à taxa de alfabetização (0 = 30,8% médio → 5 = 88,6% médio), mas a fonte não documenta os cortes exatos. Fabricar limites seria dado inventado — optou-se pela transparência sobre a limitação |
+| **`nivel_alfabetizacao` (escala 0–5) mantido sem codificação de faixas** | Inferir e documentar limites de corte para cada nível | Validado no codigo que é uma escala ordinal com correlação à taxa de alfabetização (0 = 30,8% médio → 5 = 88,6% médio), mas a fonte não documenta os cortes exatos. Fabricar limites seria dado inventado entao optou-se pela transparência porem com limitação |
 
 ---
 
@@ -98,20 +98,24 @@ A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via 
 
 | Verificação | Resultado |
 |---|---|
-| Duplicidade — todas as 8 tabelas Silver | ✅ Chave primária única confirmada em cada uma (ex: `alunos` → `id_aluno + ano`, não `id_aluno` isolado) |
-| Chaves órfãs — enriquecimento geográfico (UF, Município) | ✅ 0 nulos em `sigla_uf_nome` e `id_municipio_nome` nas tabelas que dependem desse join |
-| Nulos investigados — Gold Table 2 (metas vs. resultado) | ⚠️ 3,96% de nulos remanescentes mesmo após filtro correto, decompostos em: 96 casos de chave ausente (município sem meta definida) + 120 casos de meta nula na própria fonte (lacuna do dado bruto do INEP) |
-| Contaminação cruzada streaming → batch | ✅ Confirmado que 0 dos nulos da Gold Table 2 vêm de dados de streaming — 100% originários do batch |
+| Duplicidade — todas as 8 tabelas Silver | Chave primária única confirmada em cada uma (ex: `alunos` → `id_aluno + ano`, não `id_aluno` apenas) |
+| Chaves órfãs — joins geográfico (UF, Município) | 0 nulos em `sigla_uf_nome` e `id_municipio_nome` nas tabelas que dependem desse join |
+| Nulos investigados — Gold Table 2 (metas vs. resultado) | 3,96% de nulos remanescentes mesmo após filtro correto, decompostos em: 96 casos de chave ausente (município sem meta definida) + 120 casos de meta nula na própria fonte (lacuna do dado bruto do INEP). Importante mencionar que esses dados foram alterando durante a fase de teste do streaming afetrando numeros absolutos, porem nao afetando o numero de nulos |
+| Contaminação cruzada streaming → batch | Confirmado que 0 dos nulos da Gold Table 2 vêm de dados de streaming — 100% originários do batch |
 
 ---
 
 ## 7. Monitoramento e FinOps
 
 **Monitoramento:**
-- **Falhas de ingestão**: Job com retries automáticos (2x, 10 min de intervalo) por task.
+- **Falhas de ingestão**: Job com retries automáticos (2x, 15 min de intervalo) por task.
 - **Alertas de erro**: notificação por e-mail em sucesso e falha, testada em cenário real (uma falha de path de credencial foi capturada e notificada corretamente durante o desenvolvimento).
-- **Volume processado e latência**: tabela `bd_alfabetizacao_monitoramento.default.log_execucoes` registra, por execução, camada, tabela, linhas processadas, tempo de execução e status — consultável para análise de tendência de performance ao longo do tempo.
+- **Volume processado e latência**: tabela `bd_alfabetizacao_monitoramento.default.log_execucoes` registra, por execução, camada, tabela, linhas processadas, tempo de execução e status sendo consultáveis para análise de tendência de performance ao longo do tempo.
 - **Latência de streaming**: métricas nativas do Structured Streaming (`query.recentProgress`) capturam linhas processadas por micro-batch.
+
+<img width="1436" height="880" alt="Screenshot 2026-07-12 at 11 37 37 AM" src="https://github.com/user-attachments/assets/ae416ae4-a0b5-441b-aab3-217a935483f6" />
+<img width="1436" height="880" alt="Screenshot 2026-07-12 at 11 38 05 AM" src="https://github.com/user-attachments/assets/2cb25727-b044-4bc8-8650-bc9f075d7d4e" />
+
 
 **FinOps:**
 - **Databricks Free Edition (serverless)**: sem custo de infraestrutura ociosa — compute é alocado sob demanda por execução.
