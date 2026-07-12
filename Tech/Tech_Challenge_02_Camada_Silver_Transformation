@@ -294,6 +294,29 @@ validar_duplicidade(alunos_silver, ["id_aluno", "ano"], "alunos_silver (id_aluno
 spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_silver")
 spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_silver.default")
 
+-----------------------------------------------------------------
+--- Dentro do DataBricks 
+--- Criando o Log Error Tracker
+------------------------------------------------------------------- 
+
+import time
+from datetime import datetime, timezone
+
+def log_execucao(camada, tabela, linhas, tempo_segundos, status="sucesso", mensagem=""):
+    log_df = spark.createDataFrame([{
+        "timestamp_execucao": datetime.now(timezone.utc).isoformat(),
+        "camada": camada,
+        "tabela": tabela,
+        "linhas_processadas": linhas,
+        "tempo_execucao_segundos": round(tempo_segundos, 2),
+        "status": status,
+        "mensagem": mensagem,
+    }])
+    log_df.write.format("delta").mode("append").saveAsTable(
+        "bd_alfabetizacao_monitoramento.default.log_execucoes"
+    )
+
+
 ---------
 
 tabelas_silver = {
@@ -308,13 +331,22 @@ tabelas_silver = {
 }
 
 for nome, df in tabelas_silver.items():
-    (
-        df.write
-        .format("delta")
-        .mode("overwrite")
-        .saveAsTable(f"bd_alfabetizacao_silver.default.{nome}")
-    )
-    print(f"OK: {nome} -> {df.count()} linhas gravadas")
+    inicio = time.time()
+    try:
+        (
+            df.write
+            .format("delta")
+            .mode("overwrite")
+            .saveAsTable(f"bd_alfabetizacao_silver.default.{nome}")
+        )
+        linhas = df.count()
+        tempo = time.time() - inicio
+        log_execucao("silver", nome, linhas, tempo, "sucesso")
+        print(f"OK: {nome} -> {linhas} linhas gravadas ({tempo:.1f}s)")
+    except Exception as e:
+        tempo = time.time() - inicio
+        log_execucao("silver", nome, 0, tempo, "falha", str(e))
+        raise
 
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
@@ -341,16 +373,27 @@ df_stream_silver = (
 
 checkpoint_silver = "/Volumes/bd_alfabetizacao_bronze/default/streaming_landing/_checkpoint_silver"
 
-query_silver = (
-    df_stream_silver.writeStream
-    .format("delta")
-    .option("checkpointLocation", checkpoint_silver)
-    .outputMode("append")
-    .trigger(availableNow=True)
-    .toTable("bd_alfabetizacao_silver.default.indicador_municipio_streaming")
-)
+inicio = time.time()
+try:
+    query_silver = (
+        df_stream_silver.writeStream
+        .format("delta")
+        .option("checkpointLocation", checkpoint_silver)
+        .outputMode("append")
+        .trigger(availableNow=True)
+        .toTable("bd_alfabetizacao_silver.default.indicador_municipio_streaming")
+    )
 
-query_silver.awaitTermination()
+    query_silver.awaitTermination()
+
+    linhas_processadas = (query_silver.recentProgress[-1].get("numInputRows") or 0) if query_silver.recentProgress else 0
+    tempo = time.time() - inicio
+    log_execucao("silver", "indicador_municipio_streaming", linhas_processadas, tempo, "sucesso")
+    print(f"OK: streaming->silver processou {linhas_processadas} linhas novas ({tempo:.1f}s)")
+except Exception as e:
+    tempo = time.time() - inicio
+    log_execucao("silver", "indicador_municipio_streaming", 0, tempo, "falha", str(e))
+    raise
 
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
