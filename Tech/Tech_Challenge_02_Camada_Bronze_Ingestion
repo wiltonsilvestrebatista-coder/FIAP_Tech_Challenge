@@ -38,6 +38,34 @@ spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_bronze")
 spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_bronze.default")
 
 -----------------------------------------------------------------
+--- Monitoramento - Criacao do catalog
+-----------------------------------------------------------------
+
+spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_monitoramento")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_monitoramento.default")
+
+-----------------------------------------------------------------
+--- Monitoramento - Criacao da funcao log
+-----------------------------------------------------------------
+
+import time
+from datetime import datetime, timezone
+
+def log_execucao(camada, tabela, linhas, tempo_segundos, status="sucesso", mensagem=""):
+    log_df = spark.createDataFrame([{
+        "timestamp_execucao": datetime.now(timezone.utc).isoformat(),
+        "camada": camada,
+        "tabela": tabela,
+        "linhas_processadas": linhas,
+        "tempo_execucao_segundos": round(tempo_segundos, 2),
+        "status": status,
+        "mensagem": mensagem,
+    }])
+    log_df.write.format("delta").mode("append").saveAsTable(
+        "bd_alfabetizacao_monitoramento.default.log_execucoes"
+    )
+
+-----------------------------------------------------------------
 --- Dentro do DataBricks 
 -- Gravando a tabela 
 -----------------------------------------------------------------
@@ -79,22 +107,27 @@ fontes = {
 }
 
 for nome_bronze, tabela_origem in fontes.items():
-    df = (
-        spark.read.format("bigquery")
-        .option("credentials", creds_b64)
-        .option("table", f"basedosdados.{tabela_origem}")
-        .option("project", "basedosdados")
-        .option("parentProject", BILLING_PROJECT)
-        .load()
-    )
-    (
-        df.write
-        .format("delta")
-        .mode("overwrite")
-        .saveAsTable(f"bd_alfabetizacao_bronze.default.{nome_bronze}")
-    )
-    print(f"OK: {nome_bronze} -> {df.count()} linhas")
-
+    inicio = time.time()
+    try:
+        df = (
+            spark.read.format("bigquery")
+            .option("credentials", creds_b64)
+            .option("table", f"basedosdados.{tabela_origem}")
+            .option("project", "basedosdados")
+            .option("parentProject", BILLING_PROJECT)
+            .load()
+        )
+        df.write.format("delta").mode("overwrite").saveAsTable(
+            f"bd_alfabetizacao_bronze.default.{nome_bronze}"
+        )
+        linhas = df.count()
+        tempo = time.time() - inicio
+        log_execucao("bronze", nome_bronze, linhas, tempo, "sucesso")
+        print(f"OK: {nome_bronze} -> {linhas} linhas ({tempo:.1f}s)")
+    except Exception as e:
+        tempo = time.time() - inicio
+        log_execucao("bronze", nome_bronze, 0, tempo, "falha", str(e))
+        raise
 -----------------------------------------------------------------
 --- Dentro do DataBricks 
 -- Checando o volume antes de carregar. 
@@ -174,23 +207,8 @@ df_alunos = (
 
 print(f"OK: alunos -> {df_alunos.count()} linhas")
 
-
 -----------------------------------------------------------------
---- Confirmando que esta tudo gravado
------------------------------------------------------------------
-
-
-display(spark.sql("SHOW TABLES IN bd_alfabetizacao_bronze.default"))
-
------------------------------------------------------------------
---- Monitoramento - Criacao do catalog
------------------------------------------------------------------
-
-spark.sql("CREATE CATALOG IF NOT EXISTS bd_alfabetizacao_monitoramento")
-spark.sql("CREATE SCHEMA IF NOT EXISTS bd_alfabetizacao_monitoramento.default")
-
------------------------------------------------------------------
---- Monitoramento - Criacao da funcao log
+--- Log
 -----------------------------------------------------------------
 
 import time
@@ -211,6 +229,12 @@ def log_execucao(camada, tabela, linhas, tempo_segundos, status="sucesso", mensa
     )
 
 
+-----------------------------------------------------------------
+--- Confirmando que esta tudo gravado
+-----------------------------------------------------------------
+
+
+display(spark.sql("SHOW TABLES IN bd_alfabetizacao_bronze.default"))
 
 
 -----------------------------------------------------------------
