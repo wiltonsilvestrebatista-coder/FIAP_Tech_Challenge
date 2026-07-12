@@ -114,6 +114,8 @@ A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via 
 - **Latência de streaming**: métricas nativas do Structured Streaming (`query.recentProgress`) capturam linhas processadas por micro-batch.
 
 <img width="1436" height="880" alt="Screenshot 2026-07-12 at 11 37 37 AM" src="https://github.com/user-attachments/assets/ae416ae4-a0b5-441b-aab3-217a935483f6" />
+
+
 <img width="1436" height="880" alt="Screenshot 2026-07-12 at 11 38 05 AM" src="https://github.com/user-attachments/assets/2cb25727-b044-4bc8-8650-bc9f075d7d4e" />
 
 
@@ -132,21 +134,8 @@ A camada Gold foi desenhada para alimentar diretamente iniciativas de IA e anál
 
 - **`indicador_alfabetizacao_municipio`**: base para modelos preditivos de risco de não-alfabetização por município, usando features como rede de ensino, série e histórico de proficiência.
 - **`metas_vs_resultado_municipio`**: a coluna `gap_meta` permite treinar modelos de classificação/regressão para identificar municípios com maior risco de não atingir a meta de 2030, priorizando intervenção de política pública.
-- **`evolucao_temporal_indicador`**: séries temporais por UF podem alimentar modelos de forecasting (ex: ARIMA, Prophet) para projetar trajetória até 2030 por estado.
-- **`nivel_alfabetizacao`** (escala ordinal 0–5): apesar de não ter cortes documentados, sua correlação monotônica com a taxa de alfabetização o torna um candidato a feature ordinal em modelos de clusterização de vulnerabilidade educacional.
-
----
-
-## 9. Estrutura do Repositório
-
-```
-├── README.md
-└── Tech/
-    ├── Tech_Challenge_02_Camada_Bronze_Ingestion       # Ingestão batch (BigQuery → Bronze) + streaming (simulador + Auto Loader → Bronze)
-    ├── Tech_Challenge_02_Streaming_Ingestion            # Simulador de eventos + Auto Loader (Bronze streaming)
-    ├── Tech_Challenge_02_Camada_Silver_Transformation   # Decodificação, enriquecimento geográfico, validação de qualidade
-    └── Tech_Challenge_02_Gold_Tran...                   # 3 tabelas analíticas (indicador, metas vs. resultado, evolução temporal)
-```
+- **`evolucao_temporal_indicador`**: séries temporais por UF podem alimentar modelos de forecasting para projetar trajetória até 2030 por estado.
+- **`nivel_alfabetizacao`** (escala 0–5): apesar de não ter cortes documentados, sua correlação monotônica com a taxa de alfabetização o torna um candidato a feature ordinal em modelos de clusterização de vulnerabilidade educacional.
 
 ---
 
@@ -154,16 +143,4 @@ A camada Gold foi desenhada para alimentar diretamente iniciativas de IA e anál
 
 📹 *[Link do vídeo a ser adicionado]* — apresentação executiva (até 5 min) cobrindo problema de negócio, arquitetura da solução, valor da pipeline e potencial de aplicação em IA.
 
----
 
-## 11. Como Reproduzir
-
-**Pré-requisitos:**
-- Conta [Databricks Free Edition](https://www.databricks.com/) (gratuita, sem cartão de crédito)
-- Projeto no Google Cloud com a BigQuery API habilitada
-- Service Account do GCP com roles `BigQuery User` + `BigQuery Data Viewer`, chave JSON exportada
-
-**Passos:**
-1. Faça upload da chave JSON da Service Account para o Workspace do Databricks.
-2. Execute os notebooks na ordem: `Bronze_Ingestion` → `Streaming_Ingestion` → `Silver_Transformation` → `Gold_Transformations`.
-3. (Opcional) Configure o Job de orquestração no Databricks Workflows replicando o DAG descrito na Seção 2.
