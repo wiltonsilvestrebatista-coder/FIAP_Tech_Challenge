@@ -1,4 +1,4 @@
-# Pipeline Híbrido para Análise da Alfabetização no Brasil
+<img width="1600" height="1150" alt="arquitetura_pipeline" src="https://github.com/user-attachments/assets/a589184b-ec07-40c5-a8e8-50b4d113080a" /># Pipeline Híbrido para Análise da Alfabetização no Brasil
 
 Tech Challenge – Fase 2 | Arquitetura de Dados (Batch + Streaming) utilizando Databricks e Google Cloud 
 
@@ -25,77 +25,164 @@ Este projeto constrói a infraestrutura de dados que torna essas perguntas respo
 
 A solução integra duas nuvens: **Google Cloud Platform** (fonte de dados, via BigQuery/Base dos Dados) e **Databricks** (processamento, armazenamento analítico e orquestração), seguindo a **Arquitetura Medalhão** (Bronze > Silver > Gold) com ingestão híbrida **batch + streaming**.
 
-```mermaid
-flowchart TB
-    subgraph GCP["☁️ Google Cloud Platform"]
-        BQ[("BigQuery<br/>Base dos Dados<br/>(projeto público: basedosdados)")]
-        SA["Service Account<br/>(BigQuery User + Data Viewer)"]
-    end
+![Uploading arqui<svg viewBox="0 0 1600 1150" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#FF0066"/>
+    </marker>
+  </defs>
 
-    subgraph DBX["🧱 Databricks Free Edition"]
-        direction TB
+  <rect x="0" y="0" width="1600" height="1150" fill="#FFFFFF"/>
 
-        subgraph BRONZE["🥉 Bronze — dados brutos"]
-            B1["8 tabelas batch<br/>(uf, municipio, indicador, metas, dicionário, alunos)"]
-            B2["indicador_municipio_streaming"]
-        end
+  <!-- Title -->
+  <text x="800" y="50" text-anchor="middle" font-size="30" font-weight="bold" fill="#0D0D0D">
+    Arquitetura da Solução — Pipeline Híbrido de Alfabetização
+  </text>
 
-        subgraph SILVER["🥈 Silver — tratado e integrado"]
-            S1["Decodificação (dicionário)<br/>+ Enriquecimento geográfico<br/>+ Validação de qualidade"]
-        end
+  <!-- ===================== GOOGLE CLOUD PLATFORM ===================== -->
+  <rect x="60" y="100" width="380" height="230" rx="14" fill="#0D0D0D" stroke="#FF0066" stroke-width="3"/>
+  <text x="250" y="135" text-anchor="middle" font-size="20" font-weight="bold" fill="#FF0066">GOOGLE CLOUD PLATFORM</text>
 
-        subgraph GOLD["🥇 Gold — analítico"]
-            G1["indicador_alfabetizacao_municipio<br/>(UNION batch + streaming)"]
-            G2["metas_vs_resultado_municipio<br/>(gap analysis)"]
-            G3["evolucao_temporal_indicador<br/>(série temporal UF/Brasil)"]
-        end
-    end
+  <rect x="90" y="160" width="320" height="70" rx="10" fill="#FFFFFF" stroke="#FF0066" stroke-width="2"/>
+  <text x="250" y="188" text-anchor="middle" font-size="17" font-weight="bold" fill="#0D0D0D">BigQuery</text>
+  <text x="250" y="212" text-anchor="middle" font-size="14" fill="#333333">Base dos Dados (basedosdados)</text>
 
-    SIM["Simulador de Eventos<br/>(nova medição de indicador)"] --> VOL[("Unity Catalog Volume<br/>streaming_landing")]
-    VOL --> AL["Auto Loader<br/>(Structured Streaming)"]
-    AL --> B2
+  <rect x="90" y="250" width="320" height="60" rx="10" fill="#FFFFFF" stroke="#FF0066" stroke-width="2"/>
+  <text x="250" y="278" text-anchor="middle" font-size="16" font-weight="bold" fill="#0D0D0D">Service Account</text>
+  <text x="250" y="298" text-anchor="middle" font-size="13" fill="#333333">BigQuery User + Data Viewer</text>
 
-    SA -.credencial.-> BQ
-    BQ -->|"Spark BigQuery Connector<br/>(leitura tabela a tabela)"| B1
+  <!-- Arrow GCP -> Bronze -->
+  <line x1="440" y1="215" x2="560" y2="215" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="500" y="200" text-anchor="middle" font-size="13" fill="#0D0D0D" font-style="italic">Spark BigQuery</text>
+  <text x="500" y="235" text-anchor="middle" font-size="13" fill="#0D0D0D" font-style="italic">Connector</text>
 
-    B1 --> S1
-    B2 --> S1
-    S1 --> G1 & G2 & G3
+  <!-- ===================== DATABRICKS CONTAINER ===================== -->
+  <rect x="560" y="100" width="980" height="380" rx="14" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="3"/>
+  <text x="1050" y="135" text-anchor="middle" font-size="20" font-weight="bold" fill="#0D0D0D">DATABRICKS FREE EDITION</text>
 
-    subgraph ORQ["⚙️ Databricks Workflows — Job Orquestrado"]
-        direction LR
-        T1["ingestao_bronze"] --> T3["transformacao_silver"]
-        T2["streaming_indicador"] --> T3
-        T3 --> T4["transformacao_gold"]
-    end
+  <!-- Bronze -->
+  <rect x="590" y="160" width="280" height="90" rx="10" fill="#0D0D0D" stroke="#FF0066" stroke-width="2"/>
+  <text x="730" y="192" text-anchor="middle" font-size="18" font-weight="bold" fill="#FF0066">🥉 BRONZE</text>
+  <text x="730" y="215" text-anchor="middle" font-size="13" fill="#FFFFFF">8 tabelas batch</text>
+  <text x="730" y="235" text-anchor="middle" font-size="13" fill="#FFFFFF">+ indicador_streaming</text>
 
-    T4 -.dispara.-> RUN["📊 Run History<br/>(sucesso/falha por task)"]
-    RUN --> NOTIF["📧 Notificação por e-mail<br/>(sucesso e falha)"]
-    RUN --> LOG[("log_execucoes<br/>(Delta — volume e latência)")]
+  <!-- arrow bronze -> silver -->
+  <line x1="870" y1="205" x2="960" y2="205" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
 
-    ORQ -.agendamento.-> SCHED["🕒 Schedule: a cada 2 semanas"]
-```
+  <!-- Silver -->
+  <rect x="960" y="160" width="280" height="90" rx="10" fill="#0D0D0D" stroke="#FF0066" stroke-width="2"/>
+  <text x="1100" y="192" text-anchor="middle" font-size="18" font-weight="bold" fill="#FF0066">🥈 SILVER</text>
+  <text x="1100" y="215" text-anchor="middle" font-size="13" fill="#FFFFFF">Decodificação +</text>
+  <text x="1100" y="235" text-anchor="middle" font-size="13" fill="#FFFFFF">Enriquecimento + Qualidade</text>
 
-**Evidência de execução real** — o Job orquestrado rodando de ponta a ponta no Databricks Workflows, com as 4 tasks do DAG concluídas com sucesso:
+  <!-- arrow silver -> gold -->
+  <line x1="1240" y1="205" x2="1300" y2="205" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Gold -->
+  <rect x="1300" y="160" width="220" height="90" rx="10" fill="#0D0D0D" stroke="#FF0066" stroke-width="2"/>
+  <text x="1410" y="192" text-anchor="middle" font-size="18" font-weight="bold" fill="#FF0066">🥇 GOLD</text>
+  <text x="1410" y="215" text-anchor="middle" font-size="13" fill="#FFFFFF">3 tabelas</text>
+  <text x="1410" y="235" text-anchor="middle" font-size="13" fill="#FFFFFF">analíticas</text>
+
+  <!-- ===================== STREAMING (below, inside Databricks box) ===================== -->
+  <rect x="590" y="290" width="180" height="70" rx="10" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="2"/>
+  <text x="680" y="320" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">Simulador de</text>
+  <text x="680" y="340" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">Eventos</text>
+
+  <line x1="770" y1="325" x2="830" y2="325" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="830" y="290" width="180" height="70" rx="10" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="2"/>
+  <text x="920" y="320" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">UC Volume</text>
+  <text x="920" y="340" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">(landing zone)</text>
+
+  <line x1="1010" y1="325" x2="1070" y2="325" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="1070" y="290" width="180" height="70" rx="10" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="2"/>
+  <text x="1160" y="320" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">Auto Loader</text>
+  <text x="1160" y="340" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">(Structured Streaming)</text>
+
+  <!-- arrow autoloader up to bronze -->
+  <polyline points="1160,290 1160,252 870,252" fill="none" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- ===================== ORCHESTRATION (Job) ===================== -->
+  <rect x="560" y="530" width="980" height="260" rx="14" fill="#0D0D0D" stroke="#FF0066" stroke-width="3"/>
+  <text x="1050" y="565" text-anchor="middle" font-size="20" font-weight="bold" fill="#FF0066">
+    ⚙️ DATABRICKS WORKFLOWS — JOB ORQUESTRADO
+  </text>
+
+  <!-- Task boxes -->
+  <rect x="600" y="600" width="220" height="70" rx="10" fill="#FFFFFF" stroke="#FF0066" stroke-width="2"/>
+  <text x="710" y="640" text-anchor="middle" font-size="15" font-weight="bold" fill="#0D0D0D">ingestao_bronze</text>
+
+  <rect x="600" y="690" width="220" height="70" rx="10" fill="#FFFFFF" stroke="#FF0066" stroke-width="2"/>
+  <text x="710" y="720" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">streaming</text>
+  <text x="710" y="740" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">_indicador</text>
+
+  <line x1="820" y1="635" x2="895" y2="670" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="820" y1="725" x2="895" y2="680" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="900" y="635" width="230" height="70" rx="10" fill="#FFFFFF" stroke="#FF0066" stroke-width="2"/>
+  <text x="1015" y="665" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">transformacao</text>
+  <text x="1015" y="685" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">_silver</text>
+
+  <line x1="1130" y1="670" x2="1200" y2="670" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="1200" y="635" width="230" height="70" rx="10" fill="#FFFFFF" stroke="#FF0066" stroke-width="2"/>
+  <text x="1315" y="665" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">transformacao</text>
+  <text x="1315" y="685" text-anchor="middle" font-size="14" font-weight="bold" fill="#0D0D0D">_gold</text>
+
+  <text x="1050" y="775" text-anchor="middle" font-size="14" fill="#FFFFFF" font-style="italic">
+    Retries: 2x (10min) · Schedule: a cada 2 semanas
+  </text>
+
+  <!-- Arrow job -> notification/log -->
+  <line x1="1050" y1="790" x2="1050" y2="840" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Notification + Log -->
+  <rect x="770" y="850" width="260" height="80" rx="10" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="2"/>
+  <text x="900" y="885" text-anchor="middle" font-size="16" font-weight="bold" fill="#0D0D0D">📧 Notificação e-mail</text>
+  <text x="900" y="910" text-anchor="middle" font-size="13" fill="#333333">sucesso e falha</text>
+
+  <rect x="1070" y="850" width="260" height="80" rx="10" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="2"/>
+  <text x="1200" y="885" text-anchor="middle" font-size="16" font-weight="bold" fill="#0D0D0D">📊 log_execucoes</text>
+  <text x="1200" y="910" text-anchor="middle" font-size="13" fill="#333333">volume + latência (Delta)</text>
+
+  <!-- Arrow databricks -> orchestration connecting label -->
+  <line x1="1050" y1="480" x2="1050" y2="525" stroke="#0D0D0D" stroke-width="2" stroke-dasharray="6,4"/>
+
+  <!-- Legend -->
+  <rect x="60" y="1000" width="20" height="20" fill="#0D0D0D" stroke="#FF0066" stroke-width="2"/>
+  <text x="90" y="1016" font-size="14" fill="#0D0D0D">Camada / Etapa de processamento</text>
+
+  <rect x="60" y="1035" width="20" height="20" fill="#FFFFFF" stroke="#0D0D0D" stroke-width="2"/>
+  <text x="90" y="1051" font-size="14" fill="#0D0D0D">Componente / Task individual</text>
+
+  <line x1="60" y1="1080" x2="90" y2="1080" stroke="#FF0066" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="100" y="1085" font-size="14" fill="#0D0D0D">Fluxo de dados</text>
+</svg>
+tetura_pipeline.svg…]()
+
+
+**Evidência de execução real**: o Job orquestrado rodando de ponta a ponta no Databricks Workflows, com as 4 tasks sendo concluídas com sucesso:
 
 <img width="1436" height="880" alt="job_run_databricks" src="https://github.com/user-attachments/assets/1ee8792e-472a-4094-bc8a-db986a08c9f2" />
 
 
-*Run concluído em 5m 4s (`ingestao_bronze`: 1m49s, `streaming_indicador`: 49s em paralelo, `transformacao_silver`: 2m30s, `transformacao_gold`: 43s), com lineage automático de 15 tabelas upstream e 23 tabelas downstream rastreadas pelo Unity Catalog.*
 
-**Por que essa combinação de nuvens?** A Base dos Dados publica seus datasets exclusivamente no BigQuery — não faria sentido replicar essa infraestrutura. O Google Cloud aqui atua só como **fonte de dados fiel à origem**; todo o processamento, curadoria, orquestração e disponibilização analítica acontece no Databricks, que foi escolhido por implementar nativamente a arquitetura Medalhão (o conceito Bronze/Silver/Gold nasceu no ecossistema Delta Lake/Databricks) e por rodar Spark de forma gerenciada, sem a necessidade de operar cluster Hadoop manualmente.
+
+**Escolha das Ferramentas Cloud:** A Base dos Dados publica seus datasets exclusivamente no BigQuery e não faria sentido replicar essa infraestrutura. O Google Cloud aqui atua só como **uma ponte para fonte de dados fiel à original**; todo o processamento, curadoria, orquestração e disponibilização analítica acontece no Databricks, que foi escolhido por implementar arquitetura Medalhão de forma facil e eficaz e por rodar Spark de forma gerenciada, sem a necessidade de operar cluster Hadoop manualmente.
 
 ---
 
 ## 3. Fluxo de Dados
 
-**Lado batch:**
+**Batch:**
 1. Um projeto GCP próprio (`crianca-alfabetizada-pipeline`) foi criado como **projeto de billing**, com uma Service Account (`databricks-federation`) autorizada a ler o projeto público `basedosdados` (roles `BigQuery User` + `BigQuery Data Viewer`).
 2. Dentro do Databricks, o **Spark BigQuery Connector** (`spark.read.format("bigquery")`) lê cada uma das 8 tabelas de origem diretamente, usando a credencial da Service Account, e grava como tabela Delta na camada **Bronze**.
-3. A camada **Silver** decodifica colunas de código (via a tabela `dicionario`), enriquece com nomes de UF/Município (via diretórios), e valida qualidade (duplicidade, nulos, chaves órfãs).
+3. A camada **Silver** codifica colunas de código (utilizando a tabela **dicionario** como base), e joining com nomes de UF/Município (pelos diretórios), e valida qualidade (duplicidade, nulos, chaves órfãs).
 4. A camada **Gold** consolida os dados tratados em 3 tabelas analíticas prontas para consumo.
 
-**Lado streaming (simulado):**
+**Streaming (simulado):**
 1. Um notebook simulador gera eventos JSON representando novas medições do indicador, gravando-os em uma **Unity Catalog Volume** (landing zone).
 2. O **Auto Loader** (Spark Structured Streaming) lê esses arquivos incrementalmente — só os novos, sem reprocessar — e grava na Bronze em modo `append`.
 3. O mesmo pipeline de decodificação/enriquecimento da Silver batch é aplicado ao streaming.
