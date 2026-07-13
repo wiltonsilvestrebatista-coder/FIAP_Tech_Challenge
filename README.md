@@ -141,11 +141,9 @@ A camada Gold foi desenhada para alimentar diretamente iniciativas de IA e anál
 
 ## 10. Vídeo Executivo
 
-<p align="center">
-  <a href="httpsbe/Y9Z_vlcWKUs
-    <img src="https://img.youtube.com/vi/Y9Z_vlcWKUs/ult.jpg
-  </a>
-</p>
+## 🎥 Demo Video
+
+[![Watch the demo](https://img.youtube.com/vi/Y9Z_vlcWKUs/maxresdefault.jpg)](https://youtu.be/ 
 
 Apresentação executiva (até 5 min) cobrindo problema de negócio, arquitetura da solução, valor da pipeline e potencial de aplicação em IA.
 
