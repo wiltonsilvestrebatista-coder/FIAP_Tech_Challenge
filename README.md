@@ -5,6 +5,8 @@ Tech Challenge – Fase 2 | Arquitetura de Dados (Batch + Streaming) utilizando 
 
 ---
 
+**(OS CODIGOS UTILIZADOS DENTRO DO DATABRICKS ESTAO SALVOS NA PASTA **TECH**)**
+
 ## 1. Contexto do Problema & Desafio Educacional
 
 A não alfabetização infantil é uma das principais barreiras ao desenvolvimento educacional, social e econômico do Brasil. O **Compromisso Nacional Criança Alfabetizada** mobiliza União, estados e municípios para garantir que todas as crianças estejam alfabetizadas até o final do 2º ano do Ensino Fundamental, com meta nacional de universalização até 2030.
